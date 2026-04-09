@@ -2,115 +2,143 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 import google.generativeai as genai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 st.set_page_config(page_title="Kilimarket AI", page_icon="🌽", layout="wide")
 
-# ===================== CONFIG =====================
-GEMINI_API_KEY = "AIzaSyAa7TIa-A4DFEEyp0h-UFqHL_HnkYp4Ke4"   # ← Keep your key here
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    st.error("❌ GEMINI_API_KEY is missing. Please check your .env file.")
+    st.stop()
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Expanded & realistic Kenyan market data (March 2026)
-data = {
-    "Commodity": [
-        "Maize Grain (Loose)", "Beans (Rosecoco)", "Sukuma Wiki (Kale)", 
-        "Irish Potatoes", "Cabbage", "Tomatoes", "Rice (Pishori)", 
-        "Onions (Red)", "Carrots", "Capsicum (Green)"
-    ],
-    "Current_Price_KSh_per_kg": [71, 120, 102, 98, 71, 85, 145, 110, 95, 130],
-    "Last_Week_Price": [69, 115, 98, 95, 65, 80, 142, 105, 92, 125],
-    "Market": ["Nairobi", "Eldoret", "Nakuru", "Kisumu", "Mombasa", "Nairobi", "Eldoret", "Nakuru", "Kisumu", "Mombasa"],
-    "Trend": ["Slight Increase", "Increasing", "Increasing", "Stable", "Increasing", "Increasing", "Stable", "Increasing", "Stable", "Increasing"]
-}
+# ===================== LOAD REAL DATA =====================
+@st.cache_data(ttl=3600)
+def load_market_data():
+    try:
+        df = pd.read_csv("wfp_food_prices_ken.csv")
+        df = df[df['pricetype'].str.contains('Retail', case=False, na=False)]
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date', ascending=False)
+        
+        latest = df.groupby(['commodity', 'market']).first().reset_index()
+        
+        latest['Commodity'] = latest['commodity'].str.title()
+        latest = latest.rename(columns={
+            'price': 'Current_Price_KSh_per_kg',
+            'market': 'Market'
+        })
+        
+        useful = ['Maize', 'Beans', 'Potatoes', 'Cabbage', 'Tomatoes', 'Rice', 
+                 'Onions', 'Kale', 'Sukuma', 'Carrots', 'Capsicum']
+        latest = latest[latest['Commodity'].str.contains('|'.join(useful), case=False, na=False)]
+        
+        return latest[['Commodity', 'Market', 'Current_Price_KSh_per_kg']], df
+        
+    except:
+        st.warning("Using simulated data")
+        fallback = {
+            "Commodity": ["Maize Grain", "Beans Rosecoco", "Sukuma Wiki", "Irish Potatoes", "Cabbage", "Tomatoes"],
+            "Current_Price_KSh_per_kg": [71, 120, 102, 98, 71, 85],
+            "Market": ["Nairobi", "Eldoret", "Nakuru", "Kisumu", "Mombasa", "Nairobi"]
+        }
+        return pd.DataFrame(fallback), pd.DataFrame()
 
-df = pd.DataFrame(data)
+latest_prices, full_history = load_market_data()
+
+# ===================== CUSTOM STYLING =====================
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; }
+    .stButton>button { background-color: #00cc66; color: white; font-weight: bold; }
+    .metric-label { font-size: 1.1rem; font-weight: 600; }
+    </style>
+""", unsafe_allow_html=True)
 
 # ===================== HEADER =====================
 st.title("🌽 Kilimarket AI")
-st.markdown("**Helping Kenyan Farmers Get Fair Market Prices & Smart Advice**")
+st.markdown("**Real-time Market Prices & AI-Powered Advice for Kenyan Farmers**")
+st.caption("Helping small-scale farmers avoid middlemen exploitation")
 
 st.markdown("---")
 
-# ===================== MAIN LAYOUT =====================
-col1, col2 = st.columns([2, 1])
-
+# ===================== FILTERS =====================
+col1, col2, col3 = st.columns([2, 2, 1])
 with col1:
-    st.subheader("📊 Today's Market Prices")
-    st.dataframe(df, use_container_width=True, hide_index=True)
+    markets = ["All Markets"] + sorted(latest_prices['Market'].unique())
+    selected_market = st.selectbox("🌍 Filter by Market", markets)
 
 with col2:
-    st.subheader("🌾 Select Commodity")
-    commodity = st.selectbox("Choose a crop", df["Commodity"])
-    
-    selected_row = df[df["Commodity"] == commodity].iloc[0]
-    
-    st.metric(
-        label=f"**{commodity}**",
-        value=f"KSh {selected_row['Current_Price_KSh_per_kg']} / kg",
-        delta=f"{selected_row['Current_Price_KSh_per_kg'] - selected_row['Last_Week_Price']} KSh from last week"
-    )
+    if not latest_prices.empty:
+        commodities = sorted(latest_prices['Commodity'].unique())
+        selected_commodity = st.selectbox("🌾 Select Commodity", commodities)
 
-    st.info("💡 Tip: Use current prices to negotiate with buyers or decide when to sell.")
+# Filter data
+display_df = latest_prices if selected_market == "All Markets" else latest_prices[latest_prices['Market'] == selected_market]
 
-# Price Trend Chart
-st.subheader("📈 Price Trend (Last Week vs This Week)")
-chart_data = pd.DataFrame({
-    "Period": ["Last Week", "This Week"],
-    "Price (KSh/kg)": [selected_row['Last_Week_Price'], selected_row['Current_Price_KSh_per_kg']]
-})
-st.bar_chart(chart_data.set_index("Period"))
+# ===================== MAIN CONTENT =====================
+col_left, col_right = st.columns([2.2, 1])
 
-# ===================== AI INSIGHT =====================
-st.subheader("🤖 AI Market Insight for Farmers")
+with col_left:
+    st.subheader("📊 Current Market Prices")
+    st.dataframe(display_df[['Commodity', 'Market', 'Current_Price_KSh_per_kg']], 
+                 use_container_width=True, hide_index=True)
 
-if st.button("Get AI Advice", type="primary", use_container_width=True):
-    with st.spinner("Gemini anafikiria ushauri bora kwa mkulima..."):
+with col_right:
+    if 'selected_commodity' in locals() and not display_df.empty:
+        row = display_df[display_df['Commodity'] == selected_commodity].iloc[0]
+        
+        st.metric(
+            label=f"**{selected_commodity}**",
+            value=f"KSh {row['Current_Price_KSh_per_kg']:.0f} / kg",
+            delta=None
+        )
+        st.caption(f"📍 Market: {row['Market']}")
+
+        # Price Trend
+        st.subheader("📈 90-Day Price Trend")
+        commodity_history = full_history[full_history['commodity'].str.title() == selected_commodity]
+        if not commodity_history.empty:
+            recent = commodity_history.sort_values('date').tail(90)
+            st.line_chart(recent.set_index('date')['price'], use_container_width=True)
+
+# ===================== AI SECTION =====================
+st.subheader("🤖 AI Market Insight")
+
+if st.button("Get Personalized Farmer Advice", type="primary", use_container_width=True):
+    with st.spinner("Analyzing market trends for you..."):
         try:
             model = genai.GenerativeModel('gemini-2.5-flash')
             
             prompt = f"""
-            Wewe ni mtaalamu wa masoko ya kilimo nchini Kenya. 
-            Tarehe ya leo ni {datetime.now().strftime('%d %B %Y')}.
+            You are a friendly Kenyan agricultural expert speaking to a small-scale farmer.
 
-            Bei ya sasa ya:
-            Bidhaa: {selected_row['Commodity']}
-            Bei ya leo: KSh {selected_row['Current_Price_KSh_per_kg']} kwa kilo
-            Bei wiki iliyopita: KSh {selected_row['Last_Week_Price']} kwa kilo
-            Soko: {selected_row['Market']}
+            Today: {datetime.now().strftime('%d %B %Y')}
+            Commodity: {selected_commodity}
+            Current Price: KSh {row['Current_Price_KSh_per_kg']} per kg
+            Market: {row['Market']}
 
-            Andika ushauri mfupi, wa vitendo na wa kirafiki (maximum 5-6 sentences).
-            Tumia Kiswahili rahisi au English iliyochanganywa kama inavyofaa.
-            Eleza wazi:
-            - Ni wakati mzuri wa kuuza au kushika bidhaa?
-            - Kuna hatari au fursa gani?
-            - Ushauri wa moja kwa moja ambao mkulima mdogo anaweza kufuata leo.
-
-            Sauti yako iwe kama unazungumza moja kwa moja na mkulima mdogo wa Kenya.
+            Give warm, practical advice in simple Swahili or English (maximum 5-6 sentences).
+            Include:
+            - Is this a good time to sell or hold?
+            - Any risks or opportunities
+            - Clear action the farmer can take this week
             """
 
             response = model.generate_content(prompt)
             insight = response.text.strip()
 
-            st.success("✅ Ushauri wa AI umetolewa")
+            st.success("✅ Here is your advice:")
             st.write(insight)
 
         except Exception as e:
-            st.error(f"Hitilafu kidogo: {str(e)}")
-            st.info("Jaribu tena baada ya sekunde 10-20.")
-else:
-    st.write("Bonyeza kitufe hapo juu kupata ushauri maalum wa AI.")
-
-# ===================== FARMER TIPS SECTION =====================
-st.subheader("💡 General Farmer Tips")
-st.write("""
-- Bei huwa na mabadiliko makubwa msimu wa mvua na ukame. Fuatilia bei kila wiki.
-- Ikiwa una hifadhi salama, unaweza kushika mazao kidogo ili uuze wakati bei iko juu.
-- Usiuzwe kwa haraka kwa middlemen bila kujua bei ya soko.
-- Tumia Kilimarket AI kila wiki kabla ya kupeleka mazao sokoni.
-""")
+            st.error(f"AI Error: {str(e)}")
 
 # ===================== FOOTER =====================
 st.markdown("---")
-st.caption(f"Built on {datetime.now().strftime('%d %B %Y')} | By a Broke CS Graduate in Nairobi")
-st.caption("This is a portfolio project built in 5 days using free tools on Pop OS to help Kenyan farmers.")
-st.caption("Live Demo: Helping small-scale farmers avoid exploitation by middlemen.")
+st.caption(f"Data Source: World Food Programme (WFP) • Last checked: {datetime.now().strftime('%d %B %Y')}")
+st.caption("Built with determination in Nairobi, Kenya | CS Graduate Portfolio Project")
