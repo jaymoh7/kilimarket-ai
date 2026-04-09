@@ -15,7 +15,6 @@ Small-scale farmers in Kenya are often exploited by middlemen because they don�
 
 ### 🚀 Live Demo
 [👉 Open Kilimarket AI](https://kilimarket-ai.onrender.com)  
-*(Replace with your actual Render URL)*
 
 ### ✨ Features
 - Real WFP retail price data
