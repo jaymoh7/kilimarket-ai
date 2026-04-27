@@ -17,10 +17,15 @@ Small-scale farmers in Kenya are often exploited by middlemen because they don�
 [👉 Open Kilimarket AI](https://kilimarket-ai.onrender.com)  
 
 ### ✨ Features
-- Real WFP retail price data
-- Market filter (Nairobi, Eldoret, Nakuru, etc.)
-- Interactive 90-day price trend charts
-- Smart AI insights powered by Gemini
+- **Modern UI/UX**: Tabbed interface with sidebar filters for better navigation
+- **Enhanced Styling**: Gradient backgrounds, improved buttons, and responsive design
+- Real WFP retail price data with advanced filtering
+- Interactive price trend charts with moving averages and trend lines
+- Smart AI insights powered by Gemini (General Advice, Selling Strategy, Risk Assessment)
+- AI-powered price predictions (Week/Month/Quarter forecasts)
+- Export current prices to CSV with timestamped filenames
+- Quick stats dashboard with price comparisons
+- Mobile-friendly design with collapsible sidebar
 - Clean, mobile-friendly design
 - Safe API key handling using `.env`
 
